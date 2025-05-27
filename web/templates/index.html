@@ -1,0 +1,16 @@
+{{ define "index" }}
+<main class="flex-grow container mx-auto px-6 py-8">
+    <div class="text-center">
+        <h1 class="text-4xl font-bold text-gray-800 mb-6">Welcome to Scroblarr</h1>
+        <p class="text-xl text-gray-600 max-w-2xl mx-auto mb-8">
+            Track your playbacks across different media servers and keep everything in sync.
+        </p>
+
+        <div class="flex justify-center space-x-4">
+            <a href="/auth" class="px-6 py-3 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700 transition-colors">
+                Authenticate Trakt
+            </a>
+        </div>
+    </div>
+</main>
+{{ end }}

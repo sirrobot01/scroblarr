@@ -1,0 +1,66 @@
+{{ define "layout" }}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} Scroblarr</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col">
+<header class="bg-gradient-to-r from-purple-700 to-indigo-800 text-white shadow-lg">
+    <div class="container mx-auto px-6 py-4">
+        <div class="flex justify-between items-center">
+            <a href="/" class="text-2xl font-bold">Scroblarr</a>
+            <nav>
+                <ul class="flex space-x-8">
+                    <li><a href="/" class="font-medium hover:text-purple-200 px-1 {{ if eq .Page "index"}}border-b-2 border-white{{end}}">Home</a></li>
+                    <li><a href="/auth" class="font-medium hover:text-purple-200 px-1 {{ if eq .Page "auth"}}border-b-2 border-white{{end}}">Trakt</a></li>
+                </ul>
+            </nav>
+        </div>
+    </div>
+</header>
+
+{{ if eq .Page "index" }}
+{{ template "index" . }}
+{{ else if eq .Page "settings" }}
+{{ template "settings" . }}
+{{ else if eq .Page "auth" }}
+{{ template "auth" . }}
+{{ else }}
+{{ end }}
+
+<footer class="bg-gray-800 text-white py-4">
+    <div class="container mx-auto px-6">
+        <p class="text-center"><a target="_blank" href="https://github.com/sirrobot01/scroblarr">Github</a></p>
+    </div>
+</footer>
+
+<script>
+    // Helper function to show alerts
+    function showAlert(message, type) {
+        const alertsContainer = $('#alerts');
+
+        let alertClass = 'p-4 mb-4 rounded-md';
+        if (type === 'success') {
+            alertClass += ' bg-green-100 border border-green-200 text-green-700';
+        } else if (type === 'error') {
+            alertClass += ' bg-red-100 border border-red-200 text-red-700';
+        }
+
+        const alert = $('<div>').addClass(alertClass).text(message);
+        alertsContainer.append(alert);
+
+        // Auto-remove after 5 seconds
+        setTimeout(function () {
+            alert.fadeOut(function () {
+                $(this).remove();
+            });
+        }, 5000);
+    }
+</script>
+</body>
+</html>
+{{ end }}

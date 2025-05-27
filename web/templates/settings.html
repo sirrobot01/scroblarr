@@ -1,0 +1,357 @@
+{{ define "settings" }}
+
+<main class="flex-grow container mx-auto px-6 py-8">
+    <div id="alerts" class="mb-6"></div>
+
+    <h1 class="text-3xl font-bold text-gray-800 mb-8">Configuration</h1>
+
+    <div id="config-content" class="bg-white rounded-lg shadow-md p-6">
+        <p class="text-gray-500">Loading configuration...</p>
+    </div>
+</main>
+
+<script>
+    $(document).ready(function() {
+        // Load the configuration
+        loadConfig();
+    });
+
+    // Load configuration from API
+    function loadConfig() {
+        fetch('/api/config')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to load configuration');
+                }
+                return response.json();
+            })
+            .then(config => {
+                renderConfigPage(config);
+            })
+            .catch(error => {
+                showAlert('Error loading configuration: ' + error.message, 'error');
+            });
+    }
+
+    // Render configuration page
+    function renderConfigPage(config) {
+        let html = `
+                <form id="configForm" class="space-y-8">
+                    <div>
+                        <h2 class="text-xl font-semibold mb-4">General Settings</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div>
+                                <label for="logLevel" class="block text-sm font-medium text-gray-700 mb-1">Log Level</label>
+                                <select id="logLevel" name="logLevel" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                                    <option value="debug" ${config.log_level === 'debug' ? 'selected' : ''}>Debug</option>
+                                    <option value="info" ${config.log_level === 'info' ? 'selected' : ''}>Info</option>
+                                    <option value="warn" ${config.log_level === 'warn' ? 'selected' : ''}>Warning</option>
+                                    <option value="error" ${config.log_level === 'error' ? 'selected' : ''}>Error</option>
+                                </select>
+                                <p class="mt-1 text-sm text-gray-500">Logging verbosity level</p>
+                            </div>
+                            <div>
+                                <label for="scrobbleInterval" class="block text-sm font-medium text-gray-700 mb-1">Scrobble Check Interval</label>
+                                <input type="text" id="scrobbleInterval" name="scrobbleInterval" value="${config.interval || '30s'}" required
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                                <p class="mt-1 text-sm text-gray-500">How often to check for active media sessions (e.g., 30s, 1m)</p>
+                            </div>
+                            
+                            <div>
+                                <label for="port" class="block text-sm font-medium text-gray-700 mb-1">Port</label>
+                                <input type="number" id="port" name="port" value="${config.port || 8080}" required min="1" max="65535"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                                <p class="mt-1 text-sm text-gray-500">Web interface port</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-gray-200 pt-6">
+                        <h2 class="text-xl font-semibold mb-4">Trakt</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label for="traktEnabled" class="block text-sm font-medium text-gray-700 mb-1">Enabled</label>
+                                <input type="checkbox" id="traktEnabled" name="traktEnabled" class="form-checkbox h-5 w-5 text-indigo-600"
+                                    ${config.trakt_enabled ? 'checked' : ''} disabled>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-gray-200 pt-6">
+                        <h2 class="text-xl font-semibold mb-4">Media Servers</h2>
+                        <div id="mediaClients" class="space-y-6">
+            `;
+
+        // Add media clients from the map
+        if (config.clients && Object.keys(config.clients).length > 0) {
+            Object.entries(config.clients).forEach(([serverName, client]) => {
+                html += generateClientHtml(serverName, client);
+            });
+        } else {
+            html += `<p class="text-gray-500 italic">No media clients configured yet.</p>`;
+        }
+
+        html += `
+                        </div>
+
+                        <button type="button" id="addClient" class="mt-6 px-4 py-2 bg-indigo-600 text-white rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            Add Media Client
+                        </button>
+
+                        <div class="mt-8 pt-6 border-t border-gray-200 text-end">
+                            <button type="submit" class="px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white font-medium rounded-md shadow-md hover:from-green-700 hover:to-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            `;
+
+        $('#config-content').html(html);
+
+        // Add event listeners
+        $('#configForm').submit(function(e) {
+            e.preventDefault();
+            saveConfig();
+        });
+
+        $('#addClient').click(function() {
+            addMediaClient();
+        });
+
+        $('.remove-client').click(function() {
+            removeMediaClient($(this).data('client-name'));
+        });
+
+        $('.client-type').change(function() {
+            toggleFields($(this).data('client-name'), $(this).val());
+        });
+    }
+
+    // Generate HTML for a media client
+    function generateClientHtml(serverName, client) {
+        return `
+                <div class="media-client bg-gray-50 p-5 rounded-lg border border-gray-200" data-client-name="${serverName}">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="flex items-center space-x-3">
+                            <h3 class="text-lg font-medium text-gray-800">${serverName}</h3>
+                            <span class="px-2 py-1 text-xs font-medium rounded-full ${client.type === 'plex' ? 'bg-orange-100 text-orange-800' : client.type === 'jellyfin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}">
+                                ${client.type}
+                            </span>
+                        </div>
+                        <button type="button" class="remove-client px-3 py-1 bg-red-600 text-white rounded-md shadow-sm hover:bg-red-700" data-client-name="${serverName}">
+                            Remove
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label for="client-name-${serverName}" class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                            <input type="text" id="client-name-${serverName}" name="client-name-${serverName}" value="${serverName}" required
+                                class="client-name w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                                data-original-name="${serverName}">
+                        </div>
+
+                        <div>
+                            <label for="client-type-${serverName}" class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                            <select id="client-type-${serverName}" name="client-type-${serverName}" class="client-type w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" data-client-name="${serverName}" required>
+                                <option value="plex" ${client.type === 'plex' ? 'selected' : ''}>Plex</option>
+                                <option value="jellyfin" ${client.type === 'jellyfin' ? 'selected' : ''}>Jellyfin</option>
+                                <option value="emby" ${client.type === 'emby' ? 'selected' : ''}>Emby</option>
+                                <option value="tautulli" ${client.type === 'tautulli' ? 'selected' : ''}>Tautulli</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="client-url-${serverName}" class="block text-sm font-medium text-gray-700 mb-1">URL</label>
+                            <input type="url" id="client-url-${serverName}" name="client-url-${serverName}" value="${client.url || ''}" required
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                                placeholder="http://localhost:32400">
+                        </div>
+
+                        <div>
+                            <label for="client-token-${serverName}" class="block text-sm font-medium text-gray-700 mb-1">Token</label>
+                            <input type="text" id="client-token-${serverName}" name="client-token-${serverName}" value="${client.token || ''}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label for="client-username-${serverName}" class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                            <input type="text" id="client-username-${serverName}" name="client-username-${serverName}" value="${client.username || ''}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label for="client-password-${serverName}" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <input type="text" id="client-password-${serverName}" name="client-password-${serverName}" value="${client.password || ''}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label for="client-sync-to-${serverName}" class="block text-sm font-medium text-gray-700 mb-1">Sync To (comma-separated server names)</label>
+                            <input type="text" id="client-sync-to-${serverName}" name="client-sync-to-${serverName}"
+                                value="${client.sync_to ? client.sync_to.join(', ') : ''}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                                placeholder="client1, client2">
+                            <p class="mt-1 text-sm text-gray-500">List of servers to sync history to</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+    }
+
+    function validateClient(client) {
+        // Validate the client configuration
+        if (!client.url) {
+            showAlert('URL is required for ' + client.type, 'error');
+            return false;
+        }
+        if (client.type === 'plex' && !client.token) {
+            showAlert('Token is required for Plex', 'error');
+            return false;
+        }
+
+        if (!client.token && !client.username && !client.password) {
+            showAlert('At least one of Token, Username, or Password is required for ' + client.type, 'error');
+            return false;
+        }
+
+        if (client.sync_to.length > 0) {
+            client.sync_to.forEach(syncClient => {
+                if (!syncClient) {
+                    showAlert('Sync To server name cannot be empty', 'error');
+                    return false;
+                }
+            });
+        }
+        return true;
+
+    }
+
+    // Save configuration to API
+    function saveConfig() {
+        // Get general settings
+        const scrobbleInterval = $('#scrobbleInterval').val();
+        const logLevel = $('#logLevel').val();
+        const port = parseInt($('#port').val());
+
+        // Build clients map
+        const clients = {};
+        $('.media-client').each(function() {
+            let serverNameElement = $(this).find('.client-name');
+            let originalName = serverNameElement.data('original-name');
+            let name = serverNameElement.val();
+
+            let clientType = $(this).find('.client-type').val();
+            let url = $(this).find('input[id^="client-url-"]').val();
+            let token = $(this).find('input[id^="client-token-"]').val();
+            let username = $(this).find('input[id^="client-username-"]').val();
+            let password = $(this).find('input[id^="client-password-"]').val();
+
+            // Parse sync_to from comma-separated string to array
+            let syncToStr = $(this).find('input[id^="client-sync-to-"]').val();
+            let syncTo = syncToStr ? syncToStr.split(',').map(s => s.trim()).filter(s => s !== '') : [];
+
+            let cl = {
+                type: clientType,
+                url: url,
+                token: token,
+                username: username || '',
+                password: password || '',
+                sync_to: syncTo
+            }
+            // Validate the client
+            if (!validateClient(cl)) {
+                return;
+            }
+            clients[name] = cl;
+        });
+
+        // Build the config object
+        const configData = {
+            clients: clients,
+            interval: scrobbleInterval,
+            log_level: logLevel,
+            port: port
+        };
+
+        // Send to API
+        fetch('/api/config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(configData)
+        })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.message || 'Failed to save configuration');
+                    });
+                }
+                showAlert('Configuration saved successfully!', 'success');
+                // Reload the config to show any server-side changes
+                loadConfig();
+            })
+            .catch(error => {
+                showAlert(error.message, 'error');
+            });
+    }
+
+    // Add a new media client
+    function addMediaClient() {
+        // Generate a unique default name
+        const existingNames = $('.media-client').map(function() {
+            return $(this).data('client-name');
+        }).get();
+
+        let newName = 'client1';
+        let counter = 1;
+        while (existingNames.includes(newName)) {
+            counter++;
+            newName = 'client' + counter;
+        }
+
+        const newClient = {
+            type: 'plex',
+            url: '',
+            token: '',
+            username: '',
+            password: '',
+            sync_to: []
+        };
+
+        const clientHtml = generateClientHtml(newName, newClient);
+        $('#mediaClients').append(clientHtml);
+
+        // Add event listeners to new elements
+        $(`#client-type-${newName}`).change(function() {
+            toggleFields(newName, $(this).val());
+        });
+
+        $(`.remove-client[data-client-name="${newName}"]`).click(function() {
+            removeMediaClient(newName);
+        });
+    }
+
+    // Remove a media client
+    function removeMediaClient(serverName) {
+        $(`.media-client[data-client-name="${serverName}"]`).remove();
+    }
+
+    // Toggle authentication fields based on client type
+    function toggleFields(serverName, type) {
+        const clientFields = $(`.media-client[data-client-name="${serverName}"]`);
+        if (type === 'plex') {
+            clientFields.find('input[id^="client-token-"]').prop('required', true).removeAttr('disabled');;
+            clientFields.find('input[id^="client-username-"]').prop('required', false).removeAttr('disabled');
+            clientFields.find('input[id^="client-password-"]').prop('required', false).prop('disabled', true);
+        } else if (type === 'jellyfin' || type === 'emby') {
+            clientFields.find('input[id^="client-token-"]').prop('required', false);
+            clientFields.find('input[id^="client-username-"]').prop('required', true).removeAttr('disabled');;
+            clientFields.find('input[id^="client-password-"]').prop('required', true).removeAttr('disabled');;
+        } else if (type === 'tautulli') {
+            clientFields.find('input[id^="client-token-"]').prop('required', true);
+            clientFields.find('input[id^="client-username-"]').prop('required', false).prop('disabled', true);
+            clientFields.find('input[id^="client-password-"]').prop('required', false).prop('disabled', true);
+        }
+    }
+</script>
+{{ end }}

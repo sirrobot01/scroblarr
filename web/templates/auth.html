@@ -1,0 +1,169 @@
+{{ define "auth" }}
+
+<main class="flex-grow container mx-auto px-6 py-8">
+    <div id="alerts" class="mb-6"></div>
+
+    <div class="max-w-md mx-auto bg-white rounded-lg shadow-md overflow-hidden">
+        <div class="p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Trakt Authentication</h2>
+
+            <!-- Show this when already authenticated -->
+            <div id="traktAuthenticated" class="mb-6 p-4 bg-green-50 border border-green-200 rounded-md {{ if not .TraktEnabled }}hidden{{ end }}">
+                <p class="text-green-700 font-medium mb-2">✓ Trakt successfully authenticated</p>
+                <p class="text-sm text-gray-600">Your Trakt account is currently connected.</p>
+            </div>
+
+            <p class="text-gray-600 mb-6">Create a Trakt API application at <a href="https://trakt.tv/oauth/applications/new" target="_blank" class="text-indigo-600 hover:text-indigo-800 font-medium">here</a> and enter your Client ID and Client Secret below.</p>
+
+            <div class="mb-6">
+                <label for="client_id" class="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
+                <input type="text" id="client_id" name="client_id" value="{{ .TraktClientID }}"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+            </div>
+
+            <div class="mb-6">
+                <label for="client_secret" class="block text-sm font-medium text-gray-700 mb-1">Client Secret</label>
+                <input type="text" id="client_secret" name="client_secret" value="{{ .TraktClientSecret }}"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+            </div>
+
+            <button id="traktAuthButton" class="w-full px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium rounded-md shadow-md hover:from-indigo-700 hover:to-purple-700 transition-colors">
+                {{ if .TraktEnabled }}Re-Authenticate Trakt{{ else }}Begin Trakt Authentication{{ end }}
+            </button>
+
+            <div id="deviceAuthInProgress" class="mt-6 hidden">
+                <div class="p-4 rounded-md bg-blue-50 border border-blue-200">
+                    <h3 class="font-medium text-blue-800 mb-2">Authentication in progress</h3>
+                    <p class="text-sm text-gray-600 mb-3">Go to the following URL and enter the code shown below:</p>
+
+                    <div class="mb-3">
+                        <a id="verificationUrl" href="#" target="_blank" class="text-indigo-600 hover:text-indigo-800 font-medium break-all">
+                            https://trakt.tv/activate
+                        </a>
+                    </div>
+
+                    <div class="flex items-center justify-center mb-3">
+                        <div id="userCode" class="text-2xl font-mono bg-gray-100 px-4 py-2 rounded border border-gray-300 tracking-wider"></div>
+                    </div>
+
+                    <div class="text-center">
+                        <span id="authStatus" class="text-sm text-gray-500">Waiting for activation...</span>
+                        <div class="mt-2 w-full bg-gray-200 rounded-full h-2.5">
+                            <div id="authProgress" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Success state -->
+            <div id="authSuccess" class="mt-6 p-4 bg-green-50 border border-green-200 rounded-md hidden">
+                <p class="text-green-700 font-medium mb-2">✓ Authentication successful!</p>
+                <p class="text-sm text-gray-600">Your Trakt account has been connected successfully. The access token has been saved to your configuration.</p>
+                <div class="mt-4">
+                    <a href="/" class="block w-full text-center px-4 py-2 bg-green-600 text-white font-medium rounded-md hover:bg-green-700">
+                        Go HOme
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+
+<script>
+    $(document).ready(function() {
+        let clientId = $('#client_id').val();
+        let clientSecret = $('#client_secret').val();
+        // Trakt authentication button
+        $('#traktAuthButton').click(function() {
+            authenticateTrakt();
+        });
+
+        // Authenticate with Trakt
+        function authenticateTrakt() {
+            $('#deviceAuthInProgress').removeClass('hidden');
+            $('#authSuccess').addClass('hidden');
+            $('#traktAuthenticated').addClass('hidden');
+
+            fetch('/api/auth/trakt', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    client_id: clientId,
+                    client_secret: clientSecret
+                })
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to start device authentication');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Update the UI with the device code info
+                    $('#userCode').text(data.user_code);
+                    $('#verificationUrl').attr('href', data.verification_url).text(data.verification_url);
+
+                    // Start polling for the token
+                    pollForToken(data.device_code, data.interval);
+                })
+                .catch(error => {
+                    showAlert('Error: ' + error.message, 'error');
+                    $('#deviceAuthInProgress').addClass('hidden');
+                });
+        }
+        function pollForToken(deviceCode, interval) {
+            let attempts = 0;
+            const maxAttempts = 40; // About 10 minutes with 15s intervals
+            let progress = 0;
+
+            const pollInterval = setInterval(() => {
+                attempts++;
+                progress = (attempts / maxAttempts) * 100;
+                $('#authProgress').css('width', `${progress}%`);
+
+                fetch('/api/auth/trakt/poll', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        device_code: deviceCode,
+                        clientId: clientId,
+                        clientSecret: clientSecret
+                    })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Success! Token received
+                            clearInterval(pollInterval);
+                            $('#deviceAuthInProgress').addClass('hidden');
+                            $('#authSuccess').removeClass('hidden');
+                        } else if (data.error === 'pending') {
+                            // Still waiting for user to authorize
+                            $('#authStatus').text('Waiting for authorization...');
+                        } else if (data.error) {
+                            // Error occurred
+                            clearInterval(pollInterval);
+                            showAlert(`Error: ${data.error_description || data.error}`, 'error');
+                        }
+                    })
+                    .catch(error => {
+                        clearInterval(pollInterval);
+                        showAlert('Error checking authorization status: ' + error.message, 'error');
+                    });
+
+                // Stop polling after max attempts
+                if (attempts >= maxAttempts) {
+                    clearInterval(pollInterval);
+                    showAlert('Authentication timed out. Please try again.', 'error');
+                    $('#deviceAuthInProgress').addClass('hidden');
+                }
+            }, interval * 1000);
+        }
+    });
+</script>
+{{ end }}
