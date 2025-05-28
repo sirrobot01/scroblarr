@@ -17,7 +17,7 @@ Scroblarr is a self-hosted, open-source multi-directional scrobbling server that
 ```yaml
 services:
   scroblarr:
-    image: ghcr.io/scroblarr/scroblarr:latest
+    image: ghcr.io/sirrobot01/scroblarr:latest
     container_name: scroblarr
     restart: unless-stopped
     ports:
@@ -37,7 +37,7 @@ docker run -d \
   -v ./config:/app \
   -e PUID=1000 \
   -e PGID=1000 \
-  ghcr.io/scroblarr/scroblarr:latest
+  ghcr.io/sirrobot01/scroblarr:latest
 ```
 
 #### Binary
